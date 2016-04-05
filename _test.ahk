@@ -1,5 +1,6 @@
 ﻿#Include ..\Classes\cmd.ahk
 #Include buffer.ahk
+#Include socket.ahk
 
 cmdshow(0,0)
 
@@ -44,11 +45,15 @@ if (socket_buffer.heap != 0)
 if (socket_buffer.blocks != 0)
   cmd("Failed test: " A_LineNumber)
 
+;################################################################################
+;                     socket tests
+;################################################################################
 
+s := new socket_base()
+s._defaultCallback("hello")
+s.onClose("hello")
 
-
-
-
+s := ""
 
 
 

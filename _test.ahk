@@ -49,10 +49,12 @@ if (socket_buffer.blocks != 0)
 ;                     socket tests
 ;################################################################################
 
-s := new socket_base()
-s._defaultCallback("hello")
-s.onClose("hello")
+s := new socket_tcp()
+s.listen(1234)
+if (s.socket == -1)
+  cmd("Failed test: " A_LineNumber)
 
+s.close()
 s := ""
 
 

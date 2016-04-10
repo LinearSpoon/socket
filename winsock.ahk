@@ -211,7 +211,7 @@ ioctlsocket(s, cmd, byref argp)
 }
 
 ;https://msdn.microsoft.com/en-us/library/windows/desktop/ms739168(v=vs.85).aspx
-listen(s, backlog)
+listen(s, backlog=0x7FFFFFFF)
 {
   return DllCall("Ws2_32\listen", "ptr", s, "int", backlog)
 }

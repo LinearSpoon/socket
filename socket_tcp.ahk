@@ -1,12 +1,18 @@
-#Include socket.ahk
-
 class socket_tcp extends socket_base
 {
   static AsyncMsgNumber := 7890
   static active_sockets := Object()
+  static recv_fns := Object()
+  static send_fns := Object()
+  
   __New(type)
   {
     this.type := type
+    if (socket_tcp.recv_fns[type].Name = "")
+      this.warn("No recv function defined for " type)
+    if (socket_tcp.send_fns[type].Name = "")
+      this.warn("No send function defined for " type)
+    
     this.recvBuf := new socket_buffer()
     this.sendBuf := new socket_buffer()
     
@@ -36,6 +42,8 @@ class socket_tcp extends socket_base
     if (this.socket = INVALID_SOCKET)
       return this.cleanupAndError("socket", WSAGetLastError(), results)
     
+    socket_tcp.active_sockets[this.socket] := this
+    
     ;bind(this.socket, results.ai_addr, results.ai_addrlen)
     if bind(this.socket, Numget(results+16, 2*A_PtrSize, "ptr"), Numget(results+16, 0, "ptr"))
       return this.cleanupAndError("bind", WSAGetLastError(), results)
@@ -50,13 +58,18 @@ class socket_tcp extends socket_base
     if (listen(this.socket) = SOCKET_ERROR)
       return this.cleanupAndError("listen", WSAGetLastError())
     
-    socket_tcp.active_sockets[this.socket] := this
     return this.clearErrors()
   }
   
   connect(address, port, ipversion=4)
   {
+    this.close()
+    ;Specifying NULL for pHints parameter assumes AF_UNSPEC and 0 for all other members
+    if (r :=  GetAddrInfo(address, port, 0, results))
+      return this.setLastError("GetAddrInfo", r)
     
+    this.targets := results
+    return this.tryNextTarget()
   }
   
   onConnect(success)
@@ -78,6 +91,7 @@ class socket_tcp extends socket_base
   {
     if (this.socket = INVALID_SOCKET)
       return
+    ObjRemove(socket_tcp.active_sockets, this.socket, "")
     closesocket(this.socket), this.socket := INVALID_SOCKET
   }
   
@@ -90,10 +104,51 @@ class socket_tcp extends socket_base
   {
     if (addrInfo)
       FreeAddrInfo(addrInfo)
-    if (this.target)
-      this.target := this.current := ""
+    if (this.targets)
+      FreeAddrInfo(this.targets), this.targets := this.current := ""
     this.close()
     return this.setLastError(fn ? fn : this.lastFunction, err ? err : this.lastError)
+  }
+  
+  markForSend()
+  {
+    if (this.pendingSend)
+      return
+    this.pendingSend := true
+    DetectHiddenWindows, On
+    PostMessage, socket_tcp.AsyncMsgNumber, this.socket, 2,, ahk_id %A_ScriptHwnd%  ;Call FD_WRITE indirectly
+  }
+  
+  tryNextTarget()
+  {
+    this.current := this.current = "" ? this.targets : NumGet(this.current, 16+3*A_PtrSize, "ptr")
+    if (!this.current) ;No more targets or called inappropriately
+      return this.cleanupAndError("tryNextTarget", 10065)
+ 
+    ;socket(current.ai_family,...)
+    this.socket := socket(NumGet(this.current, 4, "int"), SOCK_STREAM, IPPROTO_TCP)
+    if (this.socket = INVALID_SOCKET)
+      return this.cleanupAndError("socket", WSAGetLastError())
+    
+    socket_tcp.active_sockets[this.socket] := this
+    
+    ;register for FD_READ | FD_WRITE | FD_CONNECT | FD_CLOSE
+    if (r := WSAAsyncSelect(this.socket, A_ScriptHwnd, socket_tcp.AsyncMsgNumber, 51))
+      return this.cleanupAndError("WSAAsyncSelect", r)
+    OnMessage(socket_tcp.AsyncMsgNumber, "AsyncSelectHandlerTCP")
+
+    ; connect(this.socket, current.ai_addr, current.ai_addrlen)
+    if connect(this.socket, Numget(this.current, 16+2*A_Ptrsize, "ptr"), Numget(this.current, 16, "ptr"))
+    {
+      e := WSAGetLastError()
+      if (e != 10035) ;10035 = WSAEWOULDBLOCK is OK, we will be notified of connection result in AsyncSelectHandler
+      {
+        this.close(), this.setLastError("connect", e)
+        return this.tryNextTarget()  ;Try the next target in case this one is simply an unsupported protocol
+      }
+    }
+
+    return this.clearErrors()
   }
 }
 
@@ -117,7 +172,7 @@ AsyncSelectHandlerTCP(wParam, lParam)
     If (r > 0)
     { ;We received data!
       sockobj.bytesRecv += r
-      sockobj.onRecv(sockobj.recvBuf.dataStart, sockobj.recvBuf.used())
+      socket_tcp.recv_fns[sockobj.type].(sockobj)
     }
     return r
   }
@@ -138,11 +193,21 @@ AsyncSelectHandlerTCP(wParam, lParam)
   }
   else if (Event = 16) ;FD_CONNECT
   {
-    
+    if (ErrorCode)
+    { ;Connection failed - try next address
+      if (sockobj.tryNextTarget())
+        sockobj.onConnect(false)
+      sockobj.onConnect(false)
+    }
+    else
+    {
+      FreeAddrInfo(sockobj.targets), sockobj.targets := sockobj.current := ""
+      sockobj.onConnect(true)
+    }
   }
   else if (Event = 32) ;FD_CLOSE
   {
-    
+    sockobj.onClose(0)
   }
   return true
 }

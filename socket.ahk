@@ -1,18 +1,10 @@
 ﻿#Include winsock.ahk
 #Include buffer.ahk
+#Include socket_tcp.ahk
+#Include protocol_raw.ahk
+#Include protocol_script.ahk
 
 /*
-  protocol overrides send/recv
-    raw
-      send(ptr, len)
-      recv(ptr, len)
-    ahk
-      send(type, value)
-      recv(type, value)
-    text ?
-      send(string)
-      recv(string)
-  
   ip protocol
     tcp
       socket_buffer
@@ -23,34 +15,6 @@
       linked list buffer?
       onRecv(address, ...)
       send(address, ...)
-  
-  socket_client
-    automatic ip version
-  socket_server
-    must specify ipv4 or ipv6
-    
-    
-  asyncselecthandler(...)
-  {
-    if recv
-    {
-      udp/tcp fill recvbuf
-      protocol custom parse buffer
-        protocol custom function calls socket.onRecv
-    }
-    if send
-    {
-      udp/tcp send sendbuf
-    }
-    if connect/accept
-    {
-      call socket.onConnect
-    }
-    if close
-    {
-      call socket.onClose
-    }
-  }
 */
 
 class socket_base

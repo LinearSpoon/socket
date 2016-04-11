@@ -1,6 +1,5 @@
 ﻿#Include ..\Classes\cmd.ahk
-#Include buffer.ahk
-#Include socket_tcp.ahk
+#Include socket.ahk
 
 cmdshow(0,0)
 
@@ -49,15 +48,34 @@ if (socket_buffer.blocks != 0)
 ;                     socket tests
 ;################################################################################
 
-s := new socket_tcp("script")
+s := new socket_tcp("raw")
 s.listen(25565)
 if (s.socket == -1)
   cmd("Failed test: " A_LineNumber)
 
-;Wait for putty connection...
-;s.close()
-;s := ""
+c := new socket_tcp("raw")
+c.connect("127.0.0.1", 25565)
+
+
+g := new socket_tcp("raw")
+g.onConnect := Func("on_connect")
+g.connect("www.google.com", 80)
+on_connect(sockobj, success)
+{
+  if !success
+    cmd("Failed test: " A_LineNumber)
+  SetTimer, CloseGoogle, -1000
+}
+
 
 
 
 cmd("All tests complete.")
+
+return
+
+CloseGoogle:
+    g.close()
+return
+
+

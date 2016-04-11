@@ -72,18 +72,18 @@ class socket_base
   
   onRecv(sender, p*)
   {
-    this.warn("Recv", "")
+    this.warn("Recv")
   }
   
   warn(str)
   {
     if IsFunc(t := "cmd")
-      %t%("Socket " this.socket ": " str)
+      %t%((this.socket ? "Warning (Socket " this.socket "): " : "Warning: " ) str)
   }
   
   setLastError(fn, err)
   {
-    this.warn(fn " threw " err)
+    this.warn(fn " threw " WSAGetErrorName(err))
     this.lastFunction := fn
     return this.lastError := err
   }

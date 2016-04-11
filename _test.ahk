@@ -1,6 +1,6 @@
 ﻿#Include ..\Classes\cmd.ahk
 #Include buffer.ahk
-#Include socket.ahk
+#Include socket_tcp.ahk
 
 cmdshow(0,0)
 
@@ -49,13 +49,14 @@ if (socket_buffer.blocks != 0)
 ;                     socket tests
 ;################################################################################
 
-s := new socket_tcp()
-s.listen(1234)
+s := new socket_tcp("script")
+s.listen(25565)
 if (s.socket == -1)
   cmd("Failed test: " A_LineNumber)
 
-s.close()
-s := ""
+;Wait for putty connection...
+;s.close()
+;s := ""
 
 
 

@@ -8,19 +8,27 @@ class socket_tcp extends socket_base
   __New(type)
   {
     this.type := type
+    ; Set recv function
     if (socket_tcp.recv_fns[type].Name = "")
       this.warn("No recv function defined for " type)
+    else
+      this.recv := socket_tcp.recv_fns[type]
+    ; Set send function
     if (socket_tcp.send_fns[type].Name = "")
       this.warn("No send function defined for " type)
+    else
+      this.send := socket_tcp.send_fns[type]
     
     this.recvBuf := new socket_buffer()
     this.sendBuf := new socket_buffer()
     
+    this.sendOK := false
     base.__New()
   }
   
   __Delete()
   {
+    cmd("delete " this.socket)
     this.close()
     this.base.__Delete()
   }
@@ -58,6 +66,7 @@ class socket_tcp extends socket_base
     if (listen(this.socket) = SOCKET_ERROR)
       return this.cleanupAndError("listen", WSAGetLastError())
     
+    this.clients := Object()
     return this.clearErrors()
   }
   
@@ -74,12 +83,12 @@ class socket_tcp extends socket_base
   
   onConnect(success)
   {
-    this.warn("Connection " (success ? "established" : "failed"))
+    this.warn("Connection " (success ? "to " this.getRemoteAddr() " established" : "failed"))
   }
   
   onAccept(client)
   {
-    this.warn("Accepted client " client.socket)
+    this.warn(this.getLocalAddr() " accepted client " client.socket)
   }
   
   onClose(reason)
@@ -89,7 +98,7 @@ class socket_tcp extends socket_base
   
   close(reason=0)
   {
-    if (this.socket = INVALID_SOCKET)
+    if (this.socket = INVALID_SOCKET || this.socket = "")
       return
     ObjRemove(socket_tcp.active_sockets, this.socket, "")
     closesocket(this.socket), this.socket := INVALID_SOCKET
@@ -112,11 +121,9 @@ class socket_tcp extends socket_base
   
   markForSend()
   {
-    if (this.pendingSend)
-      return
-    this.pendingSend := true
-    DetectHiddenWindows, On
-    PostMessage, socket_tcp.AsyncMsgNumber, this.socket, 2,, ahk_id %A_ScriptHwnd%  ;Call FD_WRITE indirectly
+    if (!this.sendOK)
+      return ; Winsock will call FD_WRITE when it is ready
+    AsyncSelectHandlerTCP(this.socket, 2) ;Call FD_WRITE
   }
   
   tryNextTarget()
@@ -157,12 +164,13 @@ AsyncSelectHandlerTCP(wParam, lParam)
   Critical
   static EventConstants := {1:"FD_READ", 2:"FD_WRITE", 8:"FD_ACCEPT", 16:"FD_CONNECT", 32:"FD_CLOSE"}
   Event := lParam & 0xFFFF, ErrorCode := lParam >> 16, sockobj := socket_tcp.active_sockets[wParam]
+  ;cmd("Socket: " (sockobj.socket ? sockobj.socket : wParam) "`tType: " sockobj.type "`tEvent: " EventConstants[Event] "  `tErrorCode: " ErrorCode)
   if not isObject(sockobj)
   {
     socket_base.warn("Unknown TCP socket: " wParam)
     return 0
   }
-  ;cmd("Socket: " sockobj.socket "`tType: " sockobj.type "`tEvent: " EventConstants[Event] "  `tErrorCode: " ErrorCode)
+  
   
   if (Event = 1) ;FD_READ
   {
@@ -172,22 +180,37 @@ AsyncSelectHandlerTCP(wParam, lParam)
     If (r > 0)
     { ;We received data!
       sockobj.bytesRecv += r
-      socket_tcp.recv_fns[sockobj.type].(sockobj)
+      sockobj.recv()
     }
     return r
   }
   else if (Event = 2) ;FD_WRITE
   {
-    
+    r := send(sockobj.socket, sockobj.sendBuf.dataStart, sockobj.sendBuf.used(), 0)
+    if (r < 0)
+    {
+      e := WSAGetLastError()
+      if (e = 10035)
+      {
+        sockobj.sendOK := false
+        return
+      }
+      return sockobj.setLastError("recv", e)
+    }
+    sockobj.bytesSent += r
+    sockobj.sendBuf.discardBytes(r)
+    sockobj.sendOK := true
   }
   else if (Event = 8) ;FD_ACCEPT
   {
     clientsock := new socket_tcp(sockobj.type)
     VarSetCapacity(saddr, 28)
     clientsock.socket := accept(sockobj.socket, &saddr, 28)
-    if (clientsock.socket == INVALID_SOCKET)
+    if (clientsock.socket = INVALID_SOCKET)
       return sockobj.setLastError("accept", WSAGetLastError())
-
+    sockobj.clients.Insert(clientsock)
+    clientsock.onRecv := sockobj.onRecv
+    clientsock.onClose := sockobj.onClose
     socket_tcp.active_sockets[clientsock.socket] := clientsock
     sockobj.onAccept(clientsock)
   }
@@ -197,7 +220,6 @@ AsyncSelectHandlerTCP(wParam, lParam)
     { ;Connection failed - try next address
       if (sockobj.tryNextTarget())
         sockobj.onConnect(false)
-      sockobj.onConnect(false)
     }
     else
     {

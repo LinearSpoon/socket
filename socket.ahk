@@ -19,6 +19,7 @@
 
 class socket_base
 {
+  
   __New()
   {
     WSAStartup()
@@ -34,9 +35,12 @@ class socket_base
     WSACleanup()
   }
   
-  onRecv(sender, p*)
+  onRecv(p*)
   {
-    this.warn("Recv")
+    str := ""
+    for k,v in p
+      str .= "`n     " k " = " v
+    this.warn("Recv" str)
   }
   
   warn(str)
@@ -61,5 +65,29 @@ class socket_base
   getLastError()
   {
     return """" this.lastFunction """ threw error " this.lastError ".`n" WSAGetErrorName(this.lastError) ": " WSAGetErrorDesc(this.lastError)
+  }
+  
+  getLocalAddr()
+  {
+    VarSetCapacity(addr, sz:=128)
+    if getsockname(this.socket, &addr, sz)
+    {
+      this.setLastError("getsockname", WSAGetLastError())
+      return ""
+    }
+    this.clearLastError()
+    return WSAAddressToString(&addr, sz) 
+  }
+  
+  getRemoteAddr()
+  {
+    VarSetCapacity(addr, sz:=128)
+    if getpeername(this.socket, &addr, sz)
+    {
+      this.setLastError("getpeername", WSAGetLastError())
+      return ""
+    }
+    this.clearLastError()
+    return WSAAddressToString(&addr, sz) 
   }
 }

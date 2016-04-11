@@ -1,6 +1,8 @@
 ﻿#Include ..\Classes\cmd.ahk
 #Include socket.ahk
 
+local_only := true  ; Only do tests that connect to the local device
+
 cmdshow(0,0)
 
 ;################################################################################
@@ -45,37 +47,87 @@ if (socket_buffer.blocks != 0)
   cmd("Failed test: " A_LineNumber)
 
 ;################################################################################
-;                     socket tests
+;                     IPv4 raw protocol test
 ;################################################################################
-
 s := new socket_tcp("raw")
+s.onRecv := Func("raw_recv")
+raw_recv(sockobj, ptr, len)
+{
+  if (len != 16)
+    cmd("Failed test: " A_LineNumber)
+  Loop, 16
+    if (NumGet(ptr+A_Index, -1, "uchar") != 7)
+    {
+      cmd("Failed test: " A_LineNumber)
+      return
+    }
+  sockobj.close()
+}
 s.listen(25565)
-if (s.socket == -1)
-  cmd("Failed test: " A_LineNumber)
 
 c := new socket_tcp("raw")
+c.onConnect := Func("client_connect")
+c.onClose := Func("silence")
+
 c.connect("127.0.0.1", 25565)
+;################################################################################
+;                     IPv6 raw protocol test
+;################################################################################
+s2 := new socket_tcp("raw")
+s2.onRecv := Func("raw_recv2")
+raw_recv2(sockobj, ptr, len)
+{
+  if (len != 16)
+    cmd("Failed test: " A_LineNumber)
+  Loop, 16
+    if (NumGet(ptr+A_Index, -1, "uchar") != 7)
+    {
+      cmd("Failed test: " A_LineNumber)
+      return
+    }
+  sockobj.close()
+}
+s2.listen(25566, 6)
+
+c2 := new socket_tcp("raw")
+c2.onConnect := Func("client_connect")
+c2.onClose := Func("silence")
+c2.connect("::1", 25566)
 
 
-g := new socket_tcp("raw")
-g.onConnect := Func("on_connect")
-g.connect("www.google.com", 80)
+;################################################################################
+;                     Remote test
+;################################################################################
+; Remote server test
+if (!local_only)
+{
+  g := new socket_tcp("raw")
+  g.onConnect := Func("on_connect")
+  g.connect("www.google.com", 80)
+}
 on_connect(sockobj, success)
 {
   if !success
     cmd("Failed test: " A_LineNumber)
   SetTimer, CloseGoogle, -1000
+  CloseGoogle:
+    g.close()
+  return
+}
+;################################################################################
+;                     Common
+;################################################################################
+
+cmd("All tests complete.") ; All except the asynch ones..
+return
+
+silence()
+{
 }
 
-
-
-
-cmd("All tests complete.")
-
-return
-
-CloseGoogle:
-    g.close()
-return
-
+client_connect(sockobj, success)
+{
+  VarSetCapacity(t, 16, 7)
+  sockobj.send(&t, 16)
+}
 

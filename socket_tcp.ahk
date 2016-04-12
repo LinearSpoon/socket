@@ -33,7 +33,10 @@ class socket_tcp extends socket_base
     this.base.__Delete()
   }
   
-  listen(port, ipversion=4)
+  ;ipversion = 0 = IPv6 server, with IPv4 clients mapped to IPv6 addresses
+  ;ipversion = 4 = IPv4 only
+  ;ipversion = 6 = IPv6 only
+  listen(port, ipversion=0)
   {
     this.close()
     VarSetCapacity(hints, sz:=16+4*A_PtrSize, 0)  ;addrinfo structure
@@ -49,8 +52,15 @@ class socket_tcp extends socket_base
     this.socket := socket(NumGet(results+4, 0, "int"), NumGet(results+8, 0, "int"), NumGet(results+12, 0, "int"))
     if (this.socket = INVALID_SOCKET)
       return this.cleanupAndError("socket", WSAGetLastError(), results)
-    
     socket_tcp.active_sockets[this.socket] := this
+    
+    if (ipversion = 0)
+    {
+      VarSetCapacity(v, 4, 0)
+      ;setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY, 0, len)
+      if (SOCKET_ERROR = setsockopt(this.socket, 41, 27, &v, 4))
+        return this.cleanupAndError("setsockopt", WSAGetLastError(), results)
+    }
     
     ;bind(this.socket, results.ai_addr, results.ai_addrlen)
     if bind(this.socket, Numget(results+16, 2*A_PtrSize, "ptr"), Numget(results+16, 0, "ptr"))
@@ -70,7 +80,7 @@ class socket_tcp extends socket_base
     return this.clearErrors()
   }
   
-  connect(address, port, ipversion=4)
+  connect(address, port)
   {
     this.close()
     ;Specifying NULL for pHints parameter assumes AF_UNSPEC and 0 for all other members
@@ -195,11 +205,13 @@ AsyncSelectHandlerTCP(wParam, lParam)
       e := WSAGetLastError()
       if (e = 10035)
       {
+        cmd("wouldblock")
         sockobj.sendOK := false
         return
       }
       return sockobj.setLastError("recv", e)
     }
+    cmd("sent " r)
     sockobj.bytesSent += r
     sockobj.sendBuf.discardBytes(r)
     sockobj.sendOK := true

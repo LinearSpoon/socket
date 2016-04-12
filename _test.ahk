@@ -54,7 +54,7 @@ s.onAccept := Func("script_accept")
 s.listen(25568)
 c := new socket_tcp("script")
 c.onRecv := Func("script_recv")
-c.connect("localhost", 25568)
+c.connect("192.168.2.100", 25568)
 
 script_recv(sockobj, type, p*)
 {
@@ -74,7 +74,15 @@ script_recv(sockobj, type, p*)
         break
       }
   }
-  
+  if (type == "file")
+  {
+    SaveFile("result.jpg", p.2)
+    ;run, result.jpg
+  }
+  if (type == "object")
+  {
+    cmd(objToJson(p.1))
+  }
 }
 
 script_accept(sockobj, client)
@@ -83,8 +91,13 @@ script_accept(sockobj, client)
   client.send("string", "你好, hello world")
   client.send("float", 123456789.0123456)
   client.send("integer", 123456789)
-  VarSetCapacity(t, 400, 7)
-  client.send("binary", {len:400, ptr:&t})
+  VarSetCapacity(t, 400000, 7)
+  client.send("binary", {len:400000, ptr:&t})
+  if (FileExist("test.jpg"))
+    client.send("file", "test.jpg")
+  o := {x:10, y:20, z:[1,2,3], str:"hello"}
+  client.send("object", o)
+  
 }
 ;################################################################################
 ;                     IPv4 raw protocol test

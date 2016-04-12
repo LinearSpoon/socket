@@ -70,7 +70,8 @@ protocol_script_addType(1, "string",,, "utf-16")
 protocol_script_addType(2, "binary",,, "sbin")
 protocol_script_addType(3, "integer",,, "int64")
 protocol_script_addType(4, "float",,, "double")
-protocol_script_addType(5, "file", "protocol_script_sendFile",, "utf-16", "bin")
+protocol_script_addType(5, "file", "protocol_script_sendFile",, "utf-16", "sbin")
+protocol_script_addType(6, "object", "protocol_script_sendObject", "protocol_script_recvObject", "utf-16")
 
 
 protocol_script_addType(typeID, typename, sendFn="", recvFn="", typedef*)
@@ -94,7 +95,7 @@ protocol_script_sendFile(sockobj, typename, filepath)
 {
   file := FileOpen(filepath, "r")
   SplitPath, filepath, filepath
-  ptr := protocol_script_prepareHeader(sockobj, len := file.length+2*StrLen(filepath)+6, typename)
+  ptr := protocol_script_prepareHeader(sockobj, file.length+2*StrLen(filepath)+6, typename)
   ptr += StrPut(filepath, ptr+0, "utf-16")*2
   Numput(file.length, ptr+0, 0, "uint")
   file.seek(0, 0)  ;Force file stream to start of file in case AHK consumed the BOM
@@ -106,4 +107,101 @@ protocol_script_genericRecv(sockobj, typename, ptr, len)
 {
   typedef := socket_tcp.typeDefs[typename]
   sockobj.onRecv(typename, protocol_raw_unpack(ptr, typedef)*)
+}
+
+;Provided for convenience
+SaveFile(name, data)
+{
+  file := FileOpen(name, "w")
+  file.RawWrite(data.ptr, data.len)
+  file.close()
+}
+
+protocol_script_sendObject(sockobj, typename, obj)
+{
+  cmdi("send")
+  str := objToJson(obj)
+  ptr := protocol_script_prepareHeader(sockobj, 2*StrLen(str)+2, typename)
+  StrPut(str, ptr, "utf-16")
+}
+
+protocol_script_recvObject(sockobj, typename, ptr, len)
+{ ; jsonToObj requires an actual variable behind each parameter
+  sockobj.onRecv(typename, jsonToObj(str := StrGet(ptr, "utf-16"), p := 1))
+}
+
+;################################################################################
+;                     Object<->String
+;################################################################################
+jsonToObj(byref jsonStr, byref p) ;, indent = "") ; p = 1
+{
+  static constants = {true:true, false:false, null:"", _:"", Function:""}
+  ;cmdi(indent "S at " p ": " RegexReplace(SubStr(jsonStr, p, 25), "[ `t`r`n]+", " ") "..." )
+  r := Object(), pp := 0
+  p := RegexMatch(jsonStr, "[^ `t`r`n]", firstChar, p)+1
+  lastChar := firstChar = "{" ? "}" : "]"
+  while( res2 != lastChar && p < strlen(jsonStr) && p > pp)
+  {
+    ;cmd(indent " L at " p ": " RegexReplace(SubStr(jsonStr, p, 25), "[ `t`r`n]+", " ") "..." )
+    Name := A_Index, pp := p
+    if (firstChar = "{")
+    { ;Expect: Name, possibly quoted
+      p := RegexMatch(jsonStr, "([^ `t`r`n:]*)[ `t`r`n]*:", res, p)+strlen(res)
+      Name := RegexReplace(res1, """(.*)""", "$1") ;strip quotes if needed
+    }
+    p := RegexMatch(jsonStr, "[^ `t`r`n]", res, p) ;Find first character but don't consume
+    if res in {,[
+      r[Name ""] := jsonToObj(jsonStr, p), p := RegexMatch(jsonStr, "[,\]}]", res2, p)+1
+    else
+    { ;else it is a basic type
+      p := RegexMatch(jsonStr, "(""[^""]*""|.*?)[ `t`r`n]*([,\]}])", res, p) + strlen(res)
+      if res1 is number
+        r[Name ""] := res1
+      else if (constants.HasKey(res1))
+        r[Name ""] := constants[res1]
+      else
+        r[Name ""] := RegexReplace(res1, """(.*)""", "$1")
+    }
+    ;Expect: comma or lastchar
+  }
+  ;cmd(indent "E at " p ": " RegexReplace(SubStr(jsonStr, p, 25), "[ `t`r`n]+", " ") "..." )
+  return r
+}
+
+objToJson(obj)
+{
+  if !IsObject(obj)
+    return ""
+  simpleArray := true
+  for k,v in obj
+  {
+    if (k != A_Index)
+    {
+      simpleArray := false
+      break
+    }
+  }
+  str := simpleArray ? "[" : "{"
+  for k,v in obj
+  {
+    if (k = "")
+      k := """"""
+    if IsObject(v)
+    {
+      if IsFunc(v.name)
+        v := "Function"
+      else
+        v := objToJson(v)
+      str .= (simpleArray ? "" : k ":") v ", "
+    }
+    else if v is number
+      str .= (simpleArray ? "" : k ":") v ", "
+    else if (v = "")
+      str .= (simpleArray ? "" : k ":") "_, "
+    else
+      str .= (simpleArray ? "" : k ":") """" v """, "
+  }
+  if IsObject(obj.base)
+    str .= "base:" objToJson(obj.base)
+  return RegexReplace(str, ", $", "") (simpleArray ? "]" : "}")
 }

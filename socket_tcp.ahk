@@ -83,17 +83,17 @@ class socket_tcp extends socket_base
   
   onConnect(success)
   {
-    this.warn("Connection " (success ? "to " this.getRemoteAddr() " established" : "failed"))
+    this.notify("Connection " (success ? "to " this.getRemoteAddr() " established" : "failed"))
   }
   
   onAccept(client)
   {
-    this.warn(this.getLocalAddr() " accepted client " client.socket)
+    this.notify(this.getLocalAddr() " accepted client " client.socket)
   }
   
   onClose(reason)
   {
-    this.warn("Close callback: reason == " reason)
+    this.notify("Close callback: reason == " reason)
   }
   
   close(reason=0)
@@ -164,13 +164,16 @@ AsyncSelectHandlerTCP(wParam, lParam)
   Critical
   static EventConstants := {1:"FD_READ", 2:"FD_WRITE", 8:"FD_ACCEPT", 16:"FD_CONNECT", 32:"FD_CLOSE"}
   Event := lParam & 0xFFFF, ErrorCode := lParam >> 16, sockobj := socket_tcp.active_sockets[wParam]
-  ;cmd("Socket: " (sockobj.socket ? sockobj.socket : wParam) "`tType: " sockobj.type "`tEvent: " EventConstants[Event] "  `tErrorCode: " ErrorCode)
+  
   if not isObject(sockobj)
   {
-    socket_base.warn("Unknown TCP socket: " wParam)
+    socket_base.warn("Event: " EventConstants[Event] "`t  Unknown socket: " wParam)
     return 0
   }
-  
+  else
+  {
+    sockobj.notify("Event: " EventConstants[Event] "`t  ErrorCode: " ErrorCode)
+  }
   
   if (Event = 1) ;FD_READ
   {
@@ -229,7 +232,7 @@ AsyncSelectHandlerTCP(wParam, lParam)
   }
   else if (Event = 32) ;FD_CLOSE
   {
-    sockobj.onClose(0)
+    sockobj.onClose(ErrorCode)
   }
   return true
 }

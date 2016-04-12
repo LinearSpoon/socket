@@ -54,6 +54,7 @@ class socket_buffer
   {
     if (this.isLocked)
       return 0
+     this.isLocked := bytesRequested
  
     ;Check if we have enough space at the end of the buffer
     if (this.bytesAvailable() >= bytesRequested)
@@ -73,15 +74,15 @@ class socket_buffer
       DllCall("RtlMoveMemory", "ptr", this.bufStart, "ptr", this.dataStart, "ptr", this.used())
       this.dataEnd += this.bufStart - this.dataStart, this.dataStart := this.bufStart
     }
-    this.isLocked := true
+   
     return this.dataEnd
   }
   
   ;Call when finished writing data to the pointer given by lock()
-  unlock(bytesUsed)
+  unlock(bytesUsed="")
   {
-    this.isLocked := false
-    this.dataEnd += bytesUsed
+    this.dataEnd += bytesUsed != "" ? bytesUsed : this.isLocked
+    this.isLocked := 0
   }
   
   ;Forces the buffer to be resized to newSize capacity
@@ -102,6 +103,8 @@ class socket_buffer
   ;Discards bytes from the start of the data segment
   discardBytes(bytesUsed)
   {
+    if (bytesUsed = 0)
+      return
     this.dataStart+=bytesUsed
     if (this.dataStart >= this.dataEnd) ;if we used all the data, reset the pointers
       this.dataStart := this.dataEnd := this.bufStart

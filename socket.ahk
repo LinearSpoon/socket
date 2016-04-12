@@ -19,6 +19,8 @@
 
 class socket_base
 {
+  static showNotifications := false
+  static showWarnings := false
   
   __New()
   {
@@ -40,13 +42,19 @@ class socket_base
     str := ""
     for k,v in p
       str .= "`n     " k " = " v
-    this.warn("Recv" str)
+    this.notify("Recv" str)
+  }
+  
+  notify(str)
+  {
+    if (socket_base.showNotifications && IsFunc(t := "cmd"))
+      %t%("Notice  (Socket " (this.socket ? this.socket : "---") "): " str)
   }
   
   warn(str)
   {
-    if IsFunc(t := "cmd")
-      %t%((this.socket ? "Warning (Socket " this.socket "): " : "Warning: " ) str)
+    if (socket_base.showWarnings && IsFunc(t := "cmd"))
+      %t%("Warning (Socket " (this.socket ? this.socket : "---") "): " str)
   }
   
   setLastError(fn, err)

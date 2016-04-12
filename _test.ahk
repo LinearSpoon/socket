@@ -1,8 +1,7 @@
 ﻿#Include ..\Classes\cmd.ahk
 #Include socket.ahk
 
-local_only := true  ; Only do tests that connect to the local device
-
+socket_base.showWarnings := true
 cmdshow(0,0)
 
 ;################################################################################
@@ -47,10 +46,52 @@ if (socket_buffer.blocks != 0)
   cmd("Failed test: " A_LineNumber)
 
 ;################################################################################
+;                     script protocol test
+;################################################################################
+socket_base.showNotifications := true
+s := new socket_tcp("script")
+s.onAccept := Func("script_accept")
+s.listen(25568)
+c := new socket_tcp("script")
+c.onRecv := Func("script_recv")
+c.connect("localhost", 25568)
+
+script_recv(sockobj, type, p*)
+{
+  cmd(type " = " p.1)
+  if (type == "string" && p.1 != "你好, hello world")
+    cmd("Failed test: " A_LineNumber)
+  if (type == "integer" && p.1 != 123456789)
+    cmd("Failed test: " A_LineNumber)
+  if (type == "float" && p.1 != 123456789.0123456)
+    cmd("Failed test: " A_LineNumber)
+  if (type == "binary")
+  {
+    Loop, % p.1.len
+      if (NumGet(p.1.ptr, A_Index-1, "uchar") != 7)
+      {
+        cmd("Failed test: " A_LineNumber)
+        break
+      }
+  }
+  
+}
+
+script_accept(sockobj, client)
+{
+  sockobj.notify("Accepting " client.socket)
+  client.send("string", "你好, hello world")
+  client.send("float", 123456789.0123456)
+  client.send("integer", 123456789)
+  VarSetCapacity(t, 400, 7)
+  client.send("binary", {len:400, ptr:&t})
+}
+;################################################################################
 ;                     IPv4 raw protocol test
 ;################################################################################
-s := new socket_tcp("raw")
-s.onRecv := Func("raw_recv")
+/*
+s1 := new socket_tcp("raw")
+s1.onRecv := Func("raw_recv")
 raw_recv(sockobj, ptr, len)
 {
   if (len != 16)
@@ -63,16 +104,22 @@ raw_recv(sockobj, ptr, len)
     }
   sockobj.close()
 }
-s.listen(25565)
+s1.listen(25565)
 
-c := new socket_tcp("raw")
-c.onConnect := Func("client_connect")
-c.onClose := Func("silence")
+c1 := new socket_tcp("raw")
+c1.onConnect := Func("raw_connect")
+client_connect(sockobj, success)
+{
+  VarSetCapacity(t, 16, 7)
+  sockobj.send(&t, 16)
+}
 
-c.connect("127.0.0.1", 25565)
+c1.connect("127.0.0.1", 25565)
+*/
 ;################################################################################
 ;                     IPv6 raw protocol test
 ;################################################################################
+/*
 s2 := new socket_tcp("raw")
 s2.onRecv := Func("raw_recv2")
 raw_recv2(sockobj, ptr, len)
@@ -90,21 +137,20 @@ raw_recv2(sockobj, ptr, len)
 s2.listen(25566, 6)
 
 c2 := new socket_tcp("raw")
-c2.onConnect := Func("client_connect")
-c2.onClose := Func("silence")
+c2.onConnect := Func("raw_connect")
 c2.connect("::1", 25566)
-
+*/
 
 ;################################################################################
 ;                     Remote test
 ;################################################################################
+/*
 ; Remote server test
-if (!local_only)
-{
   g := new socket_tcp("raw")
   g.onConnect := Func("on_connect")
   g.connect("www.google.com", 80)
-}
+  sleep, 250
+
 on_connect(sockobj, success)
 {
   if !success
@@ -114,6 +160,8 @@ on_connect(sockobj, success)
     g.close()
   return
 }
+*/
+
 ;################################################################################
 ;                     Common
 ;################################################################################
@@ -121,13 +169,4 @@ on_connect(sockobj, success)
 cmd("All tests complete.") ; All except the asynch ones..
 return
 
-silence()
-{
-}
-
-client_connect(sockobj, success)
-{
-  VarSetCapacity(t, 16, 7)
-  sockobj.send(&t, 16)
-}
 

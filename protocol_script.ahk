@@ -1,4 +1,4 @@
-; [2 byte size][2 byte type][data...]
+﻿; [2 byte size][2 byte type][data...]
 ; if (size == 0)
 ;   [2 byte null][2 byte type][4 byte size][data...]
 
@@ -119,7 +119,6 @@ SaveFile(name, data)
 
 protocol_script_sendObject(sockobj, typename, obj)
 {
-  cmdi("send")
   str := objToJson(obj)
   ptr := protocol_script_prepareHeader(sockobj, 2*StrLen(str)+2, typename)
   StrPut(str, ptr, "utf-16")

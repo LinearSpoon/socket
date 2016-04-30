@@ -54,7 +54,7 @@ s.onAccept := Func("script_accept")
 s.listen(25568)
 c := new socket_tcp("script")
 c.onRecv := Func("script_recv")
-c.connect("192.168.2.100", 25568)
+c.connect("localhost", 25568)
 
 script_recv(sockobj, type, p*)
 {
@@ -84,7 +84,6 @@ script_recv(sockobj, type, p*)
     cmd(objToJson(p.1))
   }
 }
-
 script_accept(sockobj, client)
 {
   sockobj.notify("Accepting " client.socket)

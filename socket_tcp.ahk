@@ -1,4 +1,4 @@
-class socket_tcp extends socket_base
+﻿class socket_tcp extends socket_base
 {
   static AsyncMsgNumber := 7890
   static active_sockets := Object()

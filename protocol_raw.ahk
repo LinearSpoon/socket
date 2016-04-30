@@ -1,4 +1,4 @@
-protocol_raw_recv(sockobj)
+﻿protocol_raw_recv(sockobj)
 {
   Critical
   sockobj.onRecv(sockobj.recvBuf.dataStart, sockobj.recvBuf.used())

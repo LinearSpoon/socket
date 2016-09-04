@@ -134,7 +134,6 @@ class socket_tcp extends socket_base
   
   markForSend()
   {
-    ;cmd("markForSend: " this.sendOK)
     if (!this.sendOK)
       return ; Winsock will call FD_WRITE when it is ready
     AsyncSelectHandlerTCP(this.socket, 2) ;Call FD_WRITE

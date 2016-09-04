@@ -56,48 +56,48 @@ c := new socket_tcp("script")
 c.onRecv := Func("script_recv")
 c.connect("192.168.2.100", 25568)
 
-script_recv(sockobj, type, p*)
+script_recv(sockobj, typeobj)
 {
-  cmd(type " = " p.1)
-  if (type == "string" && p.1 != "你好, hello world")
+  cmd("type == " typeobj.type)
+  
+  if (typeobj.type == "string" && typeobj.value != "你好, hello world")
     cmd("Failed test: " A_LineNumber)
-  if (type == "integer" && p.1 != 123456789)
+  if (typeobj.type == "integer" && typeobj.value != 123456789)
     cmd("Failed test: " A_LineNumber)
-  if (type == "float" && p.1 != 123456789.0123456)
+  if (typeobj.type == "float" && typeobj.value != 123456789.0123456)
     cmd("Failed test: " A_LineNumber)
-  if (type == "binary")
+  
+  if (typeobj.type == "binary")
   {
-    Loop, % p.1.len
-      if (NumGet(p.1.ptr, A_Index-1, "uchar") != 7)
+    Loop, % typeobj.len
+      if (NumGet(typeobj.ptr, A_Index-1, "uchar") != 7)
       {
         cmd("Failed test: " A_LineNumber)
         break
       }
   }
-  if (type == "file")
+  if (typeobj.type == "file")
   {
-    SaveFile("result.jpg", p.2)
+    typeobj.save("result.jpg")
     ;run, result.jpg
   }
-  if (type == "object")
+  if (typeobj.type == "object")
   {
-    cmd(objToJson(p.1))
+    cmd(objToJson(typeobj.value))
   }
 }
 
 script_accept(sockobj, client)
 {
   sockobj.notify("Accepting " client.socket)
-  client.send("string", "你好, hello world")
-  client.send("float", 123456789.0123456)
-  client.send("integer", 123456789)
+  client.send(new string_type("你好, hello world"), new float_type(123456789.0123456), new integer_type(123456789))
   VarSetCapacity(t, 400000, 7)
-  client.send("binary", {len:400000, ptr:&t})
-  if (FileExist("test.jpg"))
-    client.send("file", "test.jpg")
+  ;client.send(new binary_type(&t, 400000))
+ ;if (FileExist("test.jpg"))
+  ;  client.send(new file_type("test.jpg"))
   o := {x:10, y:20, z:[1,2,3], str:"hello"}
-  client.send("object", o)
-  
+  client.send(new object_type(o))
+  client.send(new control_type(13))
 }
 ;################################################################################
 ;                     IPv4 raw protocol test

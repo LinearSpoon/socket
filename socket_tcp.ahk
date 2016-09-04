@@ -2,22 +2,13 @@ class socket_tcp extends socket_base
 {
   static AsyncMsgNumber := 7890
   static active_sockets := Object()
-  static recv_fns := Object()
-  static send_fns := Object()
+  static write_fns := Object()
+  static read_fns := Object()
+  static types := Object()
   
   __New(type)
   {
     this.type := type
-    ; Set recv function
-    if (socket_tcp.recv_fns[type].Name = "")
-      this.warn("No recv function defined for " type)
-    else
-      this.recv := socket_tcp.recv_fns[type]
-    ; Set send function
-    if (socket_tcp.send_fns[type].Name = "")
-      this.warn("No send function defined for " type)
-    else
-      this.send := socket_tcp.send_fns[type]
     
     this.recvBuf := new socket_buffer()
     this.sendBuf := new socket_buffer()
@@ -31,6 +22,18 @@ class socket_tcp extends socket_base
     cmd("delete " this.socket)
     this.close()
     this.base.__Delete()
+  }
+  
+  send(type_objects*)
+  {
+    ; Calculate total size required
+    for k,v in type_objects
+    {
+      socket_tcp.write_fns[this.type].(this, v)
+      if (this.sendBuf.isLocked)
+        this.sendBuf.unlock()
+    }
+    this.markForSend()
   }
   
   ;ipversion = 0 = IPv6 server, with IPv4 clients mapped to IPv6 addresses
@@ -131,6 +134,7 @@ class socket_tcp extends socket_base
   
   markForSend()
   {
+    ;cmd("markForSend: " this.sendOK)
     if (!this.sendOK)
       return ; Winsock will call FD_WRITE when it is ready
     AsyncSelectHandlerTCP(this.socket, 2) ;Call FD_WRITE
@@ -167,6 +171,11 @@ class socket_tcp extends socket_base
 
     return this.clearErrors()
   }
+
+  registerType(typeclass)
+  {
+    socket_tcp.types[typeclass.get_id()] := typeclass
+  }
 }
 
 AsyncSelectHandlerTCP(wParam, lParam)
@@ -193,12 +202,13 @@ AsyncSelectHandlerTCP(wParam, lParam)
     If (r > 0)
     { ;We received data!
       sockobj.bytesRecv += r
-      sockobj.recv()
+      socket_tcp.read_fns[sockobj.type].(sockobj)
     }
     return r
   }
   else if (Event = 2) ;FD_WRITE
   {
+    cmd("Pending bytes: " sockobj.sendBuf.used())
     r := send(sockobj.socket, sockobj.sendBuf.dataStart, sockobj.sendBuf.used(), 0)
     if (r < 0)
     {
@@ -211,7 +221,7 @@ AsyncSelectHandlerTCP(wParam, lParam)
       }
       return sockobj.setLastError("recv", e)
     }
-    cmd("sent " r)
+    cmd("Sent bytes: " r)
     sockobj.bytesSent += r
     sockobj.sendBuf.discardBytes(r)
     sockobj.sendOK := true
@@ -248,3 +258,81 @@ AsyncSelectHandlerTCP(wParam, lParam)
   }
   return true
 }
+
+
+; Script protocol
+protocol_script_write(sockobj, typeobj)
+{
+   cmdi("write " sockobj.type " << " typeobj.type ", size: " typeobj.get_length() " type: " typeobj.get_id())
+  ; [2 byte size][2 byte type][data...]
+  ; if (size == 0)
+  ;   [2 byte null][2 byte type][4 byte size][data...]
+  len := typeobj.get_length()
+  if (len <= 0xFFF0)
+  { ; Small header
+    sptr := sockobj.sendBuf.lock(len+4)
+    Numput(typeobj.get_id() | ((len+4) << 16), sptr+0, 0, "uint")
+    typeobj.write_self(sptr+4)
+    sockobj.sendBuf.unlock()
+    return 1
+  }
+  else
+  { ; Large header
+    sptr := sockobj.sendBuf.lock(len+8)
+    Numput(typeobj.get_id(), sptr+0, 0, "uint")
+    Numput(len+8, sptr+4, 0, "uint")
+    typeobj.write_self(sptr+8)
+    sockobj.sendBuf.unlock()
+    return 1
+  }
+}
+socket_tcp.write_fns["script"] := Func("protocol_script_write")
+
+protocol_script_read(sockobj)
+{
+   ; cmdi("read")
+  Critical
+  lenBuffer := sockobj.recvBuf.used(), offset := 0
+  while(lenBuffer-offset >= 4) ;While we have 4+ bytes remaining...
+  {
+    dataAddress := sockobj.recvBuf.dataStart+offset
+    header1 := NumGet(dataAddress+0, 0, "uint")
+    if (lenData := header1 >> 16) ;Short header
+      typeID := header1 & 0xFFFF, lenHeader := 4
+    else if (lenBuffer-offset >= 8) ;Long header
+      typeID := header1, lenData := NumGet(dataAddress+4, 0, "uint"), lenHeader := 8
+    else  
+      break ; long header, and less than 8 bytes available
+
+    if (lenData > lenBuffer-offset)
+      break  ; Not all of the data has arrived
+    ;cmd(lenData " " offset " " lenHeader " " typeID)
+    ;typeID 
+    typeclass := socket_tcp.types[typeID]
+    if (!IsObject(typeclass))
+      sockobj.warn("Received unknown type ID: " typeID)
+    sockobj.onRecv(typeclass.read_self(dataAddress+lenHeader, lenData-lenHeader))
+    offset += lenData
+  }
+  sockobj.recvBuf.discardBytes(offset)
+}
+socket_tcp.read_fns["script"] := Func("protocol_script_read")
+
+
+; Raw protocol
+protocol_raw_write(sockobj, typeobj)
+{
+  len := typeobj.get_length()
+  sptr := sockobj.sendBuf.lock(len)
+  typeobj.write_self(sptr)
+  sockobj.sendBuf.unlock()
+}
+socket_tcp.write_fns["raw"] := Func("protocol_raw_write")
+
+protocol_raw_read(sockobj)
+{
+  Critical
+  sockobj.onRecv(sockobj.recvBuf.dataStart, sockobj.recvBuf.used())
+  ; onRecv must use unlock to free data from recvBuf
+}
+socket_tcp.read_fns["raw"] := Func("protocol_raw_read")

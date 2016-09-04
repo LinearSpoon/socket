@@ -1,8 +1,9 @@
 ﻿#Include winsock.ahk
 #Include buffer.ahk
 #Include socket_tcp.ahk
-#Include protocol_raw.ahk
-#Include protocol_script.ahk
+;#Include protocol_raw.ahk
+;#Include protocol_script.ahk
+#Include types.ahk
 
 /*
   ip protocol
@@ -41,7 +42,7 @@ class socket_base
   {
     str := ""
     for k,v in p
-      str .= "`n     " k " = " v
+      str .= "`n     " k " = " v.type
     this.notify("Recv" str)
   }
   
